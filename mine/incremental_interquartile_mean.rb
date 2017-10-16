@@ -1,8 +1,9 @@
 #!/usr/bin/ruby
 
 class Array
+
   def interquartile_mean(call_sort = true)
-    sort if call_sort
+    self.sort! if call_sort
     quartile_size = self.size / 4.0
     first_quartile_ending_index = quartile_size.ceil - 1
     third_quartile_ending_index = (quartile_size * 3).floor
@@ -13,6 +14,14 @@ class Array
 
   def extract_options!
     last.is_a?(::Hash) ? pop : {}
+  end
+
+  def sorted_insert(insertable, call_sort = true)
+    sort! if call_sort
+    bsearch_index { |x, _| x >= insertable }.tap do |i|
+      # NOTE: i is nil when empty and/or insertable goes to the end
+      i.nil? ? self.push(insertable) : self.insert(i, insertable)
+    end
   end
 end
 
@@ -26,6 +35,7 @@ class IncrementalInterQuartileMeanProcessor
   def initialize(*args)
     STDERR << "args: #{args.inspect}\n"
     @options = args.extract_options!
+    @clean_data = []
   end
 
   def calculate
@@ -36,18 +46,15 @@ class IncrementalInterQuartileMeanProcessor
   private
 
   def process_input
-    clean_data = []
     skipped_line_count = 0
     # NOTE: allowed to raise exceptions about file presence and permissions
     File.open(path_to_source_file(@options[:source_file]), 'r') do |file_handle|
       file_handle.flock(File::LOCK_EX)
       # REVIEW: length check
-      line_count = source_file_size
-      if line_count < min_input_length
-        raise RuntimeError, "FATAL: file '#{@options[:source_file]}' must exceed #{min_input_length} lines (#{line_count} found)"
+      if source_file_line_count < min_input_length
+        raise RuntimeError, "FATAL: file '#{@options[:source_file]}' must exceed #{min_input_length} lines (#{source_file_line_count} found)"
       end
-      STDERR << "Processing '#{path_to_source_file(@options[:source_file])}' -- #{line_count} lines\n"
-      sleep 1
+      STDERR << "Processing '#{path_to_source_file(@options[:source_file])}' -- #{source_file_line_count} lines\n"
       file_handle.each_line do |line_data|
         # REVIEW: input sanitization
         clean_line = (@options[:strip_invalid] ? strip_input(line_data) : line_data)
@@ -57,26 +64,29 @@ class IncrementalInterQuartileMeanProcessor
           next
         end
         # REVIEW: supports floats
-        clean_line = clean_line.method(@options[:as_integer] ? :to_i : :to_f).call
-        # NOTE: sorted insert!
-        insert_index = clean_data.bsearch_index { |x, _| x > clean_line }.to_i
-        clean_data.insert(insert_index, clean_line)
+        clean_line = clean_line.method(numeric_coercion_method).call
+        @clean_data.sorted_insert(clean_line, false)
         # NOTE: not possible to process with fewer than 4 values
-        next if clean_data.length < min_input_length
-        STDOUT << "#{clean_data.length}: #{"%.2f" % clean_data.interquartile_mean(false)}\n"
+        next if @clean_data.length < min_input_length
+        STDOUT << "#{@clean_data.length}: #{"%.2f" % @clean_data.interquartile_mean(false)}\n"
       end
     end
     STDERR << "skipped_line_count: #{skipped_line_count}\n"
+  end
+
+  def numeric_coercion_method
+    @options[:as_integer] ? :to_i : :to_f
   end
 
   def path_to_source_file(source_file)
     File.join(File.dirname(__FILE__), source_file)
   end
 
-  def source_file_size
-    `wc -l #{path_to_source_file(@options[:source_file])}`.strip.split()[0].to_i
+  def source_file_line_count
+    @source_file_line_count ||= `wc -l #{path_to_source_file(@options[:source_file])}`.strip.split()[0].to_i
   end
 
+  # REVIEW: accessible for overriding in specs
   def min_input_length
     IncrementalInterQuartileMeanProcessor.min_input_length
   end
