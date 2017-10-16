@@ -9,7 +9,9 @@ class Array
     third_quartile_ending_index = (quartile_size * 3).floor
     interquartile_range = self[first_quartile_ending_index..third_quartile_ending_index]
     factor = quartile_size - (interquartile_range.size / 2.0 - 1)
-    (interquartile_range[1...-1].inject(0, :+) + (interquartile_range[0] + interquartile_range[-1]) * factor) / (2*quartile_size)
+    interquartile_range_bounded_total = interquartile_range[1...-1].inject(0, :+)
+    interquartile_range_bounds_sum = interquartile_range[0] + interquartile_range[-1]
+    (interquartile_range_bounded_total + interquartile_range_bounds_sum * factor) / (2 * quartile_size)
   end
 
   def extract_options!
