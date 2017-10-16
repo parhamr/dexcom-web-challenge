@@ -1,5 +1,7 @@
 #!/usr/bin/ruby
 
+expected_mean_value = "458.82"
+
 class Array
 
   def interquartile_mean(call_sort = true)
@@ -48,6 +50,7 @@ class IncrementalInterQuartileMeanProcessor
   private
 
   def process_input
+    mean = 0
     skipped_line_count = 0
     # NOTE: allowed to raise exceptions about file presence and permissions
     File.open(path_to_source_file(@options[:source_file]), 'r') do |file_handle|
@@ -67,13 +70,17 @@ class IncrementalInterQuartileMeanProcessor
         end
         # REVIEW: supports floats
         clean_line = clean_line.method(numeric_coercion_method).call
+        # NOTE: already sorted; skip the expensive quicksort
         @clean_data.sorted_insert(clean_line, false)
         # NOTE: not possible to process with fewer than 4 values
         next if @clean_data.length < min_input_length
-        STDOUT << "#{@clean_data.length}: #{"%.2f" % @clean_data.interquartile_mean(false)}\n"
+        # NOTE: already sorted; skip the expensive quicksort
+        mean = @clean_data.interquartile_mean(false)
+        STDOUT << "#{@clean_data.length}: #{"%.2f" % mean}\n"
       end
     end
     STDERR << "skipped_line_count: #{skipped_line_count}\n"
+    mean
   end
 
   def numeric_coercion_method
@@ -100,10 +107,18 @@ class IncrementalInterQuartileMeanProcessor
 
 end
 
-IncrementalInterQuartileMeanProcessor.new(
+mean = IncrementalInterQuartileMeanProcessor.new(
   source_file: "data.txt",
   strip_invalid: true,
   verbose: true,
   as_integer: true,
   strict: true
 ).calculate
+
+formatted_mean = "#{"%.2f" % mean}"
+
+if formatted_mean == expected_mean_value
+  STDOUT << "SUCCESS: calculated mean (#{formatted_mean}) matches expected value (#{expected_mean_value})\n"
+else
+  raise RuntimeError, "FAIL: calculated mean (#{formatted_mean}) did not match expected value (#{expected_mean_value})"
+end
